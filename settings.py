@@ -83,8 +83,9 @@ def main():
         write_cfg(out)
         pid_file = HERE / "livesub.pid"
         if pid_file.exists():
-            subprocess.run(["taskkill", "/f", "/pid", pid_file.read_text().strip()],
-                           capture_output=True)
+            pid = pid_file.read_text().strip()
+            if pid.isdigit():  # never pass unvalidated file content to taskkill
+                subprocess.run(["taskkill", "/f", "/pid", pid], capture_output=True)
         subprocess.Popen([str(HERE / ".venv" / "Scripts" / "pythonw.exe"), str(HERE / "livesub.py")])
         status.config(text="Saved — LiveSub restarted")
 

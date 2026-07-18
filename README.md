@@ -21,6 +21,7 @@ your PC.
 1. Install [Python 3.11+](https://www.python.org/downloads/) (tick "Add to PATH")
 2. [Download LiveSub](https://github.com/Alay-Merchant/LiveSub/archive/refs/heads/main.zip) and unzip
 3. Double-click `install.bat`
+4. Double-click `panel.bat` and hit **Start**
 
 An NVIDIA GPU makes it fast; without one it falls back to CPU (use `model = "small"`).
 
@@ -28,13 +29,22 @@ An NVIDIA GPU makes it fast; without one it falls back to CPU (use `model = "sma
 
 | Action | How |
 |---|---|
-| Browser panel | `panel.bat` — opens http://localhost:7765 with Start/Stop buttons and live status |
-| Start | `run.bat` — wait for "● listening on …" |
-| Stop | tray icon → Quit (or `stop.bat`) |
+**The easy way:** double-click `panel.bat` — your browser opens the LiveSub control
+panel at http://localhost:7765 with Start/Stop, every setting (languages, model,
+text size, colors, position), and a live feed of recent subtitles. Saving settings
+restarts LiveSub automatically.
+
+| Action | How |
+|---|---|
+| Control panel | `panel.bat` → http://localhost:7765 (start/stop + all settings) |
+| Start / stop directly | `run.bat` / tray icon → Quit / `stop.bat` |
 | Pause/resume | `Ctrl+Alt+L`, or the tray icon |
 | Recent lines | `Ctrl+Alt+H` — pops the last 8 subtitles if you missed one |
-| Settings | `settings.bat` or tray icon — language, model, size, colors, position |
+| Settings (native app) | `settings.bat` |
 | Transcript | `livesub.log` — everything from the last session |
+
+The panel binds to 127.0.0.1 only and rejects cross-site requests — nothing is
+reachable from outside your machine.
 
 **Pro tip — glossary:** rename `glossary.txt.example` to `glossary.txt` and list the
 character names of the show you're watching. Name recognition improves dramatically.
