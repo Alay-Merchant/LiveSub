@@ -44,6 +44,57 @@ FADE_AFTER_S = 4.0     # hide subtitle after this much silence
 TRANSPARENT = "#010101"  # colorkey — anything this color becomes see-through
 PAUSED = threading.Event()
 VOICE_FOCUS = CFG.get("voice_focus", True)
+PROVIDER = CFG.get("translation_provider", "whisper")
+ANTHROPIC_MODEL = CFG.get("anthropic_model", "claude-opus-4-8")
+OPENAI_MODEL = CFG.get("openai_model", "gpt-4o-mini")
+# whisper's built-in translate only targets English; anything else needs an LLM provider
+NEEDS_LLM = TARGET != "en" or PROVIDER not in ("", "whisper")
+
+TRANSLATE_PROMPT = ("You are a subtitle translator. Translate the text to {target}. "
+                    "Output ONLY the translation — no notes, no quotes.")
+
+_anthropic = None
+
+
+def anthropic_translate(text: str) -> str:
+    global _anthropic
+    import anthropic
+    if _anthropic is None:
+        _anthropic = anthropic.Anthropic(api_key=CFG.get("anthropic_api_key", ""))
+    r = _anthropic.messages.create(
+        model=ANTHROPIC_MODEL, max_tokens=1024,
+        system=TRANSLATE_PROMPT.format(target=TARGET),
+        messages=[{"role": "user", "content": text}],
+    )
+    if r.stop_reason == "refusal" or not r.content:
+        return text
+    return r.content[0].text.strip()
+
+
+def openai_translate(text: str) -> str:
+    import json, urllib.request
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps({
+            "model": OPENAI_MODEL,
+            "messages": [
+                {"role": "system", "content": TRANSLATE_PROMPT.format(target=TARGET)},
+                {"role": "user", "content": text},
+            ],
+        }).encode(),
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {CFG.get('openai_api_key', '')}"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)["choices"][0]["message"]["content"].strip()
+
+
+def llm_translate(text: str) -> str:
+    if PROVIDER == "anthropic":
+        return anthropic_translate(text)
+    if PROVIDER == "openai":
+        return openai_translate(text)
+    return ollama_translate(text)  # ollama, or whisper-provider with non-EN target
 VOCAL_ISOLATION = CFG.get("vocal_isolation", False)
 _SEP = None
 
@@ -182,7 +233,7 @@ def transcriber(out_q: queue.Queue):
                         audio = bandpass(audio)
                     segments, _ = model.transcribe(
                         audio,
-                        task="translate" if TARGET == "en" else "transcribe",
+                        task="transcribe" if NEEDS_LLM else "translate",
                         language=None if SOURCE == "auto" else SOURCE,
                         initial_prompt=GLOSSARY or None,
                         beam_size=2, vad_filter=True, condition_on_previous_text=False,
@@ -205,12 +256,12 @@ def transcriber(out_q: queue.Queue):
                         # re-transcribe the WHOLE utterance so no words are lost,
                         # even for sentences longer than the interim window
                         final = transcribe(buf)
-                        if TARGET != "en" and final:
+                        if NEEDS_LLM and final:
                             try:
-                                final = ollama_translate(final)
+                                final = llm_translate(final)
                             except Exception as e:
-                                log(f"ollama failed: {e!r}")
-                                final = f"[ollama offline] {final}"
+                                log(f"translation failed: {e!r}")
+                                final = f"[{PROVIDER or 'ollama'} error] {final}"
                         if final and final != last_out:
                             last_out = final
                             log(f"[commit] {final}")
@@ -224,8 +275,8 @@ def transcriber(out_q: queue.Queue):
                 text = transcribe(buf[-int(SR * WINDOW_S):])  # interim: recent window only
                 if not text or text == last_out or (len(text) > 12 and text in last_out):
                     continue
-                if TARGET != "en":
-                    pending = text  # non-EN targets show finals only (translation cadence)
+                if NEEDS_LLM:
+                    pending = text  # LLM targets show finals only (translation cadence)
                     continue
                 # show interim only when it extends what's on screen; rewrites wait
                 # for the silence commit — no more flickering text

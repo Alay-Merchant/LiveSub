@@ -55,8 +55,13 @@ First run downloads the Whisper model (~1.5 GB for `medium`), one time.
 
 - **Streaming sites (Netflix, Disney+):** watch in Chrome or Firefox. The Windows
   apps and Edge use protected audio that can't be captured.
-- **Subtitles in a language other than English:** set `target` in settings and run
-  [Ollama](https://ollama.com) locally — English output needs nothing extra.
+- **Whisper models:** pick `tiny`→`large-v3` in the panel (speed vs accuracy) and
+  pre-download any of them with the Download button so first launch isn't slow.
+- **Translation providers:** built-in Whisper (free, English out) is the default.
+  For other output languages or higher quality, switch "Translation via" to
+  [Ollama](https://ollama.com) (free, local), OpenAI, or Anthropic Claude — paid
+  providers just need an API key pasted into the panel (stored locally, never sent
+  anywhere except that provider).
 - **Accuracy vs speed:** `medium` model is the sweet spot on a 4 GB GPU; `small` if
   you're on CPU.
 

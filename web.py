@@ -21,11 +21,19 @@ LANGS = ["auto", "ja", "fr", "en", "ko", "zh", "de", "es", "it", "pt", "ru",
          "ar", "nl", "pl", "tr", "vi", "th"]
 TARGETS = ["en", "fr", "de", "es", "ja", "hi", "it", "pt"]
 
+WHISPER_MODELS = ["tiny", "base", "small", "medium", "large-v3"]
+
 # key -> (label, kind, constraint)
 FIELDS = {
     "source": ("Spoken language", "select", LANGS),
     "target": ("Subtitle language", "select", TARGETS),
-    "model": ("Model", "select", ["small", "medium"]),
+    "model": ("Whisper model", "select", WHISPER_MODELS),
+    "translation_provider": ("Translation via", "select", ["whisper", "ollama", "openai", "anthropic"]),
+    "ollama_model": ("Ollama model", "text", r"^[\w.:\-]{0,60}$"),
+    "openai_model": ("OpenAI model", "text", r"^[\w.:\-]{0,60}$"),
+    "anthropic_model": ("Claude model", "text", r"^[\w.:\-]{0,60}$"),
+    "openai_api_key": ("OpenAI API key", "secret", r"^[\w.\-]{0,300}$"),
+    "anthropic_api_key": ("Anthropic API key", "secret", r"^[\w.\-]{0,300}$"),
     "font_size": ("Text size", "int", (8, 48)),
     "opacity": ("Opacity", "float", (0.2, 1.0)),
     "bottom_margin": ("Distance from bottom (px)", "int", (0, 600)),
@@ -33,8 +41,29 @@ FIELDS = {
     "text_color": ("Text color", "color", None),
     "outline_color": ("Outline color", "color", None),
     "font": ("Font", "text", r"^[\w \-]{0,40}$"),
-    "ollama_model": ("Ollama model (non-English targets)", "text", r"^[\w.:\-]{0,60}$"),
 }
+
+SECRET_KEYS = [k for k, (_, kind, _c) in FIELDS.items() if kind == "secret"]
+
+# whisper model pre-download state — one at a time is plenty
+DOWNLOAD = {"model": None, "status": None}
+
+
+def model_cached(name: str) -> bool:
+    hub = pathlib.Path.home() / ".cache" / "huggingface" / "hub"
+    return any(hub.glob(f"models--*faster-whisper-{name}*"))
+
+
+def download_model(name: str):
+    DOWNLOAD.update(model=name, status="downloading")
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+        from faster_whisper import WhisperModel
+        WhisperModel(name, device="cpu", compute_type="int8")  # triggers HF download
+        DOWNLOAD["status"] = "done"
+    except Exception as e:
+        DOWNLOAD["status"] = f"error: {e}"
 
 
 def read_cfg():
@@ -47,6 +76,10 @@ def validate(key, raw):
     ever reaches config.toml (regex-patched file: injection would be code)."""
     label, kind, c = FIELDS[key]
     raw = str(raw).strip()
+    if kind == "secret":
+        if not re.fullmatch(c, raw):
+            raise ValueError(key)
+        return raw
     if kind == "select":
         if raw not in c:
             raise ValueError(key)
@@ -140,6 +173,14 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
  <div class="hint">Hotkeys while running: Ctrl+Alt+L pause · Ctrl+Alt+H recent lines</div>
 </div>
 
+<div class="card"><h2>Whisper models</h2>
+ <div id="modelStatus" class="hint"></div>
+ <div class="row"><label>Pre-download a model</label>
+ <span><select id="dlModel"></select>
+ <button id="dlBtn" onclick="dl()" style="background:#3a6ea5">Download</button></span></div>
+ <div id="dlStatus" class="hint"></div>
+</div>
+
 <div class="card"><h2>Settings</h2><div id="form"></div>
  <button id="save" onclick="save()">Save settings</button><div id="msg"></div>
  <div class="hint">Saving restarts LiveSub if it's running.</div>
@@ -157,6 +198,9 @@ function buildForm(cfg){
     if (f.kind === 'select')
       return `<div class="row"><label>${f.label}</label><select id="f_${k}">` +
         f.options.map(o => `<option ${String(v)===o?'selected':''}>${o}</option>`).join('') + `</select></div>`;
+    if (f.kind === 'secret')
+      return `<div class="row"><label>${f.label}</label><input type="password" id="f_${k}" value=""
+        placeholder="${v === '•saved•' ? '•••••• (saved — leave blank to keep)' : 'not set'}"></div>`;
     if (f.kind === 'color')
       return `<div class="row"><label>${f.label}</label><input type="color" id="f_${k}" value="${v||'#ffffff'}"></div>`;
     if (f.kind === 'int' || f.kind === 'float')
@@ -171,6 +215,18 @@ async function refresh(){
   el('status').textContent = s.running ? 'Running — subtitles on screen' : 'Stopped';
   el('start').disabled = s.running; el('stop').disabled = !s.running;
   el('log').textContent = s.log || '—';
+  el('modelStatus').innerHTML = Object.entries(s.cached)
+    .map(([m, c]) => `${m} ${c ? '✓' : '·'}`).join(' &nbsp; ');
+  if (!el('dlModel').options.length)
+    el('dlModel').innerHTML = Object.keys(s.cached).map(m => `<option>${m}</option>`).join('');
+  const d = s.download;
+  el('dlStatus').textContent = d.model ? `${d.model}: ${d.status}` : '';
+  el('dlBtn').disabled = d.status === 'downloading';
+}
+async function dl(){
+  await fetch('/download', {method:'POST', headers:{...H,'Content-Type':'application/json'},
+                            body: JSON.stringify({model: el('dlModel').value})});
+  setTimeout(refresh, 500);
 }
 async function act(a){ await fetch('/'+a, {method:'POST', headers:H}); setTimeout(refresh, 600); }
 async function save(){
@@ -224,9 +280,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 lines = [l for l in LOG.read_text(encoding="utf-8", errors="replace").splitlines()
                          if "clickthrough" not in l]
                 tail = "\n".join(lines[-8:])
-            self._send(json.dumps({"running": alive(), "log": tail}), ctype="application/json")
+            self._send(json.dumps({
+                "running": alive(), "log": tail,
+                "download": DOWNLOAD,
+                "cached": {m: model_cached(m) for m in WHISPER_MODELS},
+            }), ctype="application/json")
         elif self.path == "/config":
             cfg = {k: v for k, v in read_cfg().items() if k in FIELDS}
+            for k in SECRET_KEYS:  # never send stored keys to the browser
+                cfg[k] = "•saved•" if cfg.get(k) else ""
             self._send(json.dumps(cfg), ctype="application/json")
         elif self.path == "/":
             self._send(PAGE.replace("__FIELDS__", FIELDS_JS))
@@ -240,12 +302,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             start()
         elif self.path == "/stop":
             stop()
+        elif self.path == "/download":
+            n = int(self.headers.get("Content-Length", 0))
+            if n > 1000:
+                return self.send_error(413)
+            try:
+                name = json.loads(self.rfile.read(n)).get("model")
+            except json.JSONDecodeError:
+                return self._send("bad json", code=400, ctype="text/plain")
+            if name not in WHISPER_MODELS:
+                return self._send("unknown model", code=400, ctype="text/plain")
+            if DOWNLOAD["status"] != "downloading":
+                import threading
+                threading.Thread(target=download_model, args=(name,), daemon=True).start()
         elif self.path == "/config":
             n = int(self.headers.get("Content-Length", 0))
             if n > 10_000:
                 return self.send_error(413)
             try:
                 incoming = json.loads(self.rfile.read(n))
+                incoming = {k: v for k, v in incoming.items()
+                            if not (k in SECRET_KEYS and str(v).strip() in ("", "•saved•"))}
                 cleaned = {k: validate(k, v) for k, v in incoming.items() if k in FIELDS}
             except (ValueError, json.JSONDecodeError) as e:
                 return self._send(str(e), code=400, ctype="text/plain")
