@@ -295,14 +295,29 @@ def main():
         if state["current"]:
             outlined(cx, h - 30, state["current"], font, text_color)
 
+    import difflib
+    import re as _re
+
+    def same_sentence(a, b):
+        """True when b is a refinement/extension of a (case, punctuation,
+        partial overlap) — replace in place instead of repeating."""
+        na = _re.sub(r"[^\w\s]", "", a).casefold().split()
+        nb = _re.sub(r"[^\w\s]", "", b).casefold().split()
+        if not na or not nb:
+            return True
+        sa, sb = " ".join(na), " ".join(nb)
+        return (sa in sb or sb in sa
+                or difflib.SequenceMatcher(None, sa, sb).ratio() > 0.6)
+
     def draw(text):
         if not text:
             state["current"] = state["previous"] = ""
         elif text.startswith(("●", "⚠", "⬇", "⏸", "error")):
             state["current"] = text
         else:
-            # fresh sentence (not an extension) pushes the old one to dim + history
-            if state["current"] and state["current"] not in text and text not in state["current"]:
+            # only a genuinely NEW sentence pushes the old one up; a refined
+            # version of the same sentence replaces it in place — no repeats
+            if state["current"] and not same_sentence(state["current"], text):
                 state["previous"] = state["current"]
                 history.append(state["current"])
             state["current"] = text
