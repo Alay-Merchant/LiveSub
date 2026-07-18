@@ -2,6 +2,8 @@ faster-whisper
 soundcard
 numpy
 truststore
+pystray
+pillow
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
 # Optional, only for the vocal_isolation setting (needs a fast GPU; several-GB download):

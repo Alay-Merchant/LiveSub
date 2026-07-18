@@ -86,6 +86,19 @@ def ollama_translate(text: str) -> str:
 
 LOG = pathlib.Path(__file__).with_name("livesub.log")
 
+# glossary.txt: names/terms (one per line or comma-separated) that Whisper
+# should recognise — e.g. character names for the show you're watching
+GLOSSARY_FILE = pathlib.Path(__file__).with_name("glossary.txt")
+GLOSSARY = ""
+if GLOSSARY_FILE.exists():
+    terms = [t.strip() for t in GLOSSARY_FILE.read_text(encoding="utf-8").replace("\n", ",").split(",") if t.strip()]
+    GLOSSARY = ", ".join(terms)
+
+
+def model_cached(name: str) -> bool:
+    hub = pathlib.Path.home() / ".cache" / "huggingface" / "hub"
+    return any(hub.glob(f"models--*faster-whisper-{name}*"))
+
 
 def log(msg):
     with open(LOG, "a", encoding="utf-8") as f:
@@ -93,13 +106,17 @@ def log(msg):
 
 
 def transcriber(out_q: queue.Queue):
+    if not model_cached(MODEL):
+        out_q.put(f"⬇ downloading '{MODEL}' model — first run only, takes a few minutes…")
     try:
         model = WhisperModel(MODEL, device="cuda", compute_type="int8_float16")
         log(f"model {MODEL} on GPU")
     except Exception as e:
         log(f"GPU failed: {e}; using CPU")
-        out_q.put("⚠ CPU mode — GPU unavailable, subtitles will lag")
-        model = WhisperModel(MODEL, device="cpu", compute_type="int8")
+        # ponytail: no GPU -> medium is too slow on CPU, auto-drop to small
+        cpu_model = "small" if MODEL == "medium" else MODEL
+        out_q.put(f"⚠ CPU mode — using '{cpu_model}' model")
+        model = WhisperModel(cpu_model, device="cpu", compute_type="int8")
     last_out = ""
     pending = ""  # interim text held until a silence boundary confirms the sentence
     while True:  # outer loop: reopens capture when the default output device changes
@@ -150,6 +167,7 @@ def transcriber(out_q: queue.Queue):
                     audio,
                     task="translate" if TARGET == "en" else "transcribe",
                     language=None if SOURCE == "auto" else SOURCE,
+                    initial_prompt=GLOSSARY or None,
                     beam_size=2, vad_filter=True, condition_on_previous_text=False,
                     vad_parameters={"min_silence_duration_ms": 250},
                     no_speech_threshold=0.5, log_prob_threshold=-0.8,
@@ -208,7 +226,7 @@ def main():
     root.attributes("-transparentcolor", TRANSPARENT)
     root.attributes("-alpha", CFG.get("opacity", 0.75))
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    w, h = int(sw * 0.8), 110
+    w, h = int(sw * 0.8), 260  # tall enough for the history panel; empty area is click-through
     root.geometry(f"{w}x{h}+{(sw - w) // 2}+{sh - h - CFG.get('bottom_margin', 60)}")
     root.configure(bg=TRANSPARENT)
 
@@ -219,29 +237,66 @@ def main():
     if family not in tkfont.families():
         family = "Segoe UI"
     font = (family, CFG.get("font_size", 14), "bold")
-    text_color = CFG.get("text_color", "#3b3b3b")
-    outline = CFG.get("outline_color", "#e8e8e8")
+    text_color = CFG.get("text_color", "#ffffff")
+    outline = CFG.get("outline_color", "#1a1a1a")
+    dim_color = "#9a9a9a"
+    small_font = (family, max(CFG.get("font_size", 14) - 3, 8))
 
-    def draw(text):
-        canvas.delete("all")
-        if not text:
-            return
-        cx, cy = w // 2, h // 2
+    import collections
+    history = collections.deque(maxlen=10)
+    state = {"last": 0.0, "shown": False, "combo_down": False,
+             "hist_combo": False, "hist_on": False,
+             "current": "", "previous": ""}
+
+    def outlined(cx, cy, text, f, fill):
         if outline:
             for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                canvas.create_text(cx + dx, cy + dy, text=text, font=font,
+                canvas.create_text(cx + dx, cy + dy, text=text, font=f,
                                    fill=outline, width=w - 40, justify="center")
-        canvas.create_text(cx, cy, text=text, font=font,
-                           fill=text_color, width=w - 40, justify="center")
+        canvas.create_text(cx, cy, text=text, font=f,
+                           fill=fill, width=w - 40, justify="center")
 
-    state = {"last": 0.0, "shown": False, "combo_down": False}
+    def render():
+        canvas.delete("all")
+        cx = w // 2
+        if state["hist_on"]:  # history panel: recent lines stacked, newest at bottom
+            lines = list(history) + ([state["current"]] if state["current"] else [])
+            lines = lines[-8:]
+            for i, line in enumerate(lines):
+                is_last = i == len(lines) - 1
+                outlined(cx, h - 24 - 26 * (len(lines) - 1 - i), line,
+                         font if is_last else small_font,
+                         text_color if is_last else dim_color)
+            return
+        if state["previous"]:
+            outlined(cx, h - 62, state["previous"], small_font, dim_color)
+        if state["current"]:
+            outlined(cx, h - 30, state["current"], font, text_color)
+
+    def draw(text):
+        if not text:
+            state["current"] = state["previous"] = ""
+        elif text.startswith(("●", "⚠", "⬇", "⏸", "error")):
+            state["current"] = text
+        else:
+            # fresh sentence (not an extension) pushes the old one to dim + history
+            if state["current"] and state["current"] not in text and text not in state["current"]:
+                state["previous"] = state["current"]
+                history.append(state["current"])
+            state["current"] = text
+        render()
+
+    def combo(vk, flag):
+        import ctypes
+        down = all(ctypes.windll.user32.GetAsyncKeyState(k) & 0x8000
+                   for k in (0x11, 0x12, vk))
+        fired = down and not state[flag]
+        state[flag] = down
+        return fired
 
     def check_hotkey():
-        # Ctrl+Alt+L toggles pause; polled, no global-hotkey lib needed
-        import ctypes
-        down = all(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000
-                   for vk in (0x11, 0x12, 0x4C))
-        if down and not state["combo_down"]:
+        # polled, no global-hotkey lib needed
+        if combo(0x4C, "combo_down"):  # Ctrl+Alt+L: pause
             if PAUSED.is_set():
                 PAUSED.clear()
                 draw("● resumed")
@@ -250,7 +305,11 @@ def main():
                 draw("⏸ paused — Ctrl+Alt+L to resume")
             state["last"] = time.time()
             state["shown"] = True
-        state["combo_down"] = down
+        if combo(0x48, "hist_combo"):  # Ctrl+Alt+H: history panel
+            state["hist_on"] = not state["hist_on"]
+            state["last"] = time.time()
+            state["shown"] = True
+            render()
 
     def tick():
         check_hotkey()
@@ -268,6 +327,37 @@ def main():
             draw("")
             state["shown"] = False
         root.after(200, tick)
+
+    def start_tray():
+        try:
+            import pystray
+            from PIL import Image, ImageDraw
+            img = Image.new("RGB", (64, 64), "#1a1a1a")
+            d = ImageDraw.Draw(img)
+            d.rectangle([6, 20, 58, 46], outline="#ffffff", width=3)
+            d.text((14, 24), "CC", fill="#ffffff")
+
+            def toggle_pause(icon, item):
+                PAUSED.clear() if PAUSED.is_set() else PAUSED.set()
+
+            def open_settings(icon, item):
+                import subprocess
+                subprocess.Popen([str(pathlib.Path(__file__).with_name(".venv") / "Scripts" / "pythonw.exe"),
+                                  str(pathlib.Path(__file__).with_name("settings.py"))])
+
+            def quit_app(icon, item):
+                icon.stop()
+                root.after(0, root.destroy)
+
+            pystray.Icon("LiveSub", img, "LiveSub", pystray.Menu(
+                pystray.MenuItem(lambda i: "Resume" if PAUSED.is_set() else "Pause", toggle_pause),
+                pystray.MenuItem("Settings", open_settings),
+                pystray.MenuItem("Quit", quit_app),
+            )).run()
+        except Exception as e:
+            log(f"tray failed: {e!r}")  # overlay still works without it
+
+    threading.Thread(target=start_tray, daemon=True).start()
 
     draw("LiveSub loading model…")
     state["last"] = time.time()

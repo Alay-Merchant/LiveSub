@@ -2,6 +2,8 @@
 
 **Live translated subtitles for anything playing on your PC.**
 
+![LiveSub demo](assets/demo.gif)
+
 Watching anime with no subs? A French lecture? A Korean stream? LiveSub listens to
 whatever your computer is playing, transcribes it with Whisper running locally on
 your machine, and overlays translucent, click-through subtitles in English (or any
@@ -27,10 +29,14 @@ An NVIDIA GPU makes it fast; without one it falls back to CPU (use `model = "sma
 | Action | How |
 |---|---|
 | Start | `run.bat` — wait for "● listening on …" |
-| Stop | `stop.bat` |
-| Pause/resume | `Ctrl+Alt+L` |
-| Settings | `settings.bat` — language, model, size, colors, position |
+| Stop | tray icon → Quit (or `stop.bat`) |
+| Pause/resume | `Ctrl+Alt+L`, or the tray icon |
+| Recent lines | `Ctrl+Alt+H` — pops the last 8 subtitles if you missed one |
+| Settings | `settings.bat` or tray icon — language, model, size, colors, position |
 | Transcript | `livesub.log` — everything from the last session |
+
+**Pro tip — glossary:** rename `glossary.txt.example` to `glossary.txt` and list the
+character names of the show you're watching. Name recognition improves dramatically.
 
 First run downloads the Whisper model (~1.5 GB for `medium`), one time.
 
@@ -42,6 +48,19 @@ First run downloads the Whisper model (~1.5 GB for `medium`), one time.
   [Ollama](https://ollama.com) locally — English output needs nothing extra.
 - **Accuracy vs speed:** `medium` model is the sweet spot on a 4 GB GPU; `small` if
   you're on CPU.
+
+## Compatibility
+
+Crowdsourced — [report yours](../../issues/new?template=compatibility_report.md)!
+
+| Source | Works? | Notes |
+|---|---|---|
+| YouTube (any browser) | ✅ | |
+| Local video players (VLC, mpv…) | ✅ | |
+| Netflix / Disney+ in Chrome or Firefox | ✅ | software DRM, captures fine |
+| Netflix / Disney+ in Edge or Windows apps | ❌ | protected audio path — captures silence |
+| Discord / Zoom calls | ✅ | captures the *other* side (your mic is never captured) |
+| Games | ✅ | dialogue-heavy games work well |
 
 ## How it works
 
