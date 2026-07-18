@@ -28,6 +28,7 @@ An NVIDIA GPU makes it fast; without one it falls back to CPU (use `model = "sma
 
 | Action | How |
 |---|---|
+| Browser panel | `panel.bat` — opens http://localhost:7765 with Start/Stop buttons and live status |
 | Start | `run.bat` — wait for "● listening on …" |
 | Stop | tray icon → Quit (or `stop.bat`) |
 | Pause/resume | `Ctrl+Alt+L`, or the tray icon |
