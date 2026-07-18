@@ -7,8 +7,13 @@
 Watching anime with no subs? A French lecture? A Korean stream? LiveSub listens to
 whatever your computer is playing, transcribes it with Whisper running locally on
 your machine, and overlays translucent, click-through subtitles in English (or any
-language, via Ollama). No cloud, no accounts, no uploads — your audio never leaves
-your PC.
+language, via an optional provider). No cloud, no accounts, no uploads — your audio
+never leaves your PC.
+
+**Works out of the box with no API keys or paid services** — everything runs on the
+bundled open-source Whisper model, downloaded automatically on first run. The
+optional translation providers (Ollama, OpenAI, Claude) are only needed for
+subtitle output in languages other than English.
 
 - 🌍 **~99 languages in, auto-detected** — Japanese, French, Korean, Chinese, German, Spanish, Russian, and Indian languages including Hindi, Gujarati, Tamil, Telugu, Bengali, Marathi, Punjabi, Urdu…
 - 🖥️ **Works with everything** — video players, browsers, streams, games, calls
@@ -57,8 +62,9 @@ First run downloads the Whisper model (~1.5 GB for `medium`), one time.
   apps and Edge use protected audio that can't be captured.
 - **Whisper models:** pick `tiny`→`large-v3` in the panel (speed vs accuracy) and
   pre-download any of them with the Download button so first launch isn't slow.
-- **Translation providers:** built-in Whisper (free, English out) is the default.
-  For other output languages or higher quality, switch "Translation via" to
+- **Translation providers (all optional):** built-in Whisper (free, English out)
+  is the default and needs nothing. Only if you want output in another language
+  or higher quality, switch "Translation via" to
   [Ollama](https://ollama.com) (free, local), OpenAI, or Anthropic Claude — paid
   providers just need an API key pasted into the panel (stored locally, never sent
   anywhere except that provider).

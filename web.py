@@ -28,7 +28,7 @@ FIELDS = {
     "source": ("Spoken language", "select", LANGS),
     "target": ("Subtitle language", "select", TARGETS),
     "model": ("Whisper model", "select", WHISPER_MODELS),
-    "translation_provider": ("Translation via", "select", ["whisper", "ollama", "openai", "anthropic"]),
+    "translation_provider": ("Translation via (whisper = free built-in)", "select", ["whisper", "ollama", "openai", "anthropic"]),
     "ollama_model": ("Ollama model", "text", r"^[\w.:\-]{0,60}$"),
     "openai_model": ("OpenAI model", "text", r"^[\w.:\-]{0,60}$"),
     "anthropic_model": ("Claude model", "text", r"^[\w.:\-]{0,60}$"),
@@ -183,7 +183,9 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
 
 <div class="card"><h2>Settings</h2><div id="form"></div>
  <button id="save" onclick="save()">Save settings</button><div id="msg"></div>
- <div class="hint">Saving restarts LiveSub if it's running.</div>
+ <div class="hint">Saving restarts LiveSub if it's running. No API key or account is
+ needed — the built-in whisper provider is free and fully local; keys only matter
+ if you switch to OpenAI or Anthropic.</div>
 </div>
 
 <div class="card"><h2>Recent subtitles</h2><div id="log">—</div></div>
