@@ -220,12 +220,20 @@ def transcriber(out_q: queue.Queue):
 
 
 def make_clickthrough(root):
+    """Reapplied periodically: Tk can recreate the native window and silently
+    drop the style — without it the overlay swallows clicks meant for the
+    video player underneath (pause/captions buttons live right there)."""
     import ctypes
+    u = ctypes.windll.user32
     GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT = -20, 0x80000, 0x20
-    hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
-    style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-    ctypes.windll.user32.SetWindowLongW(
-        hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+    GA_ROOT = 2
+    hwnd = u.GetAncestor(root.winfo_id(), GA_ROOT) or root.winfo_id()
+    style = u.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    want = style | WS_EX_LAYERED | WS_EX_TRANSPARENT
+    if style != want:
+        u.SetWindowLongW(hwnd, GWL_EXSTYLE, want)
+        log(f"clickthrough (re)applied to hwnd {hwnd}")
+    root.after(2000, make_clickthrough, root)
 
 
 def main():
