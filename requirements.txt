@@ -1,0 +1,9 @@
+faster-whisper
+soundcard
+numpy
+truststore
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+# Optional, only for the vocal_isolation setting (needs a fast GPU; several-GB download):
+# demucs
+# torch --extra-index-url https://download.pytorch.org/whl/cu121

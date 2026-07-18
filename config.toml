@@ -1,0 +1,15 @@
+# LiveSub settings — edit and restart (run stop.bat then run.bat)
+
+model = "medium"       # small = fast | medium = more accurate (fits your 4GB GPU) | large-v3 = best, slow
+source = "auto"        # "auto" detects; or force e.g. "ja", "fr", "ko", "zh", "de", "es", "hi", "ru"
+target = "en"          # "en" is native one-step. Anything else (e.g. "fr") needs Ollama running.
+ollama_model = "llama3.2"  # used only when target != "en"
+font_size = 14 # Claude Code-ish size
+font = "Cascadia Code" # falls back to Segoe UI if not installed
+text_color = "#ffffff"
+outline_color = "#1a1a1a"  # dark outline keeps white readable on bright video; "" for none
+opacity = 0.85         # 0.0 invisible - 1.0 solid
+bottom_margin = 60     # pixels from bottom of screen
+voice_focus = true # band-pass filter: suppress music/effects, keep dialogue
+vocal_isolation = false  # demucs AI separation — 3.6s/chunk on this GPU: subs lag badly. Needs a faster GPU.
+# pause/resume hotkey: Ctrl+Alt+L

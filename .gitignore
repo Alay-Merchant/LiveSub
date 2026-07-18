@@ -1,0 +1,4 @@
+.venv/
+livesub.log
+__pycache__/
+livesub.pid
