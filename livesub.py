@@ -125,8 +125,14 @@ def transcriber(out_q: queue.Queue):
     last_out = ""
     pending = ""  # interim text held until a silence boundary confirms the sentence
     while True:  # outer loop: reopens capture when the default output device changes
-        spk = sc.default_speaker()
-        mic = sc.get_microphone(spk.name, include_loopback=True)
+        try:
+            spk = sc.default_speaker()
+            mic = sc.get_microphone(spk.name, include_loopback=True)
+        except Exception as e:  # no output device right now (bluetooth reconnecting…)
+            log(f"no audio device: {e!r}")
+            out_q.put("⚠ no audio output device — waiting…")
+            time.sleep(3)
+            continue
         log(f"capturing loopback of: {spk.name}")
         out_q.put(f"● listening on {spk.name}")
         buf = np.zeros(0, dtype=np.float32)
@@ -135,17 +141,31 @@ def transcriber(out_q: queue.Queue):
         stop_capture = threading.Event()
 
         def capture():
-            with mic.recorder(samplerate=SR, channels=1) as rec:
-                while not stop_capture.is_set():
-                    audio_q.put(rec.record(numframes=int(SR * 0.25)).flatten())
+            try:
+                with mic.recorder(samplerate=SR, channels=1) as rec:
+                    while not stop_capture.is_set():
+                        audio_q.put(rec.record(numframes=int(SR * 0.25)).flatten())
+            except Exception as e:  # device unplugged / bluetooth dropped
+                log(f"capture ended: {e!r}")
+
+        def default_name():
+            try:
+                return sc.default_speaker().name
+            except Exception:
+                return ""  # device vanished; exit inner loop and reopen
 
         cap_t = threading.Thread(target=capture, daemon=True)
         cap_t.start()
         try:
-            while sc.default_speaker().name == spk.name:
-                parts = [audio_q.get()]
-                while len(parts) * 0.25 < HOP_S:
-                    parts.append(audio_q.get())
+            while default_name() == spk.name:
+                try:
+                    # timeout so a dead device (AirPods off, headphones
+                    # unplugged) never blocks forever — reopen on new default
+                    parts = [audio_q.get(timeout=3)]
+                    while len(parts) * 0.25 < HOP_S:
+                        parts.append(audio_q.get(timeout=3))
+                except queue.Empty:
+                    break  # capture stalled; outer loop reopens the device
                 chunk = np.concatenate(parts)
                 if PAUSED.is_set():
                     buf = np.zeros(0, dtype=np.float32)
