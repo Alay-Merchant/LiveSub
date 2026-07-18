@@ -3,7 +3,7 @@
 model = "medium"       # small = fast | medium = more accurate (fits your 4GB GPU) | large-v3 = best, slow
 source = "auto"        # "auto" detects; or force e.g. "ja", "fr", "ko", "zh", "de", "es", "hi", "ru"
 target = "en"          # "en" is native one-step. Anything else (e.g. "fr") needs Ollama running.
-ollama_model = "llama3.2"  # used only when target != "en"
+ollama_model = "llama3.2:3b"  # used only when target != "en"; must match a model from `ollama list`
 font_size = 14 # Claude Code-ish size
 font = "Cascadia Code" # falls back to Segoe UI if not installed
 text_color = "#ffffff"

@@ -80,7 +80,10 @@ def ollama_translate(text: str) -> str:
         }).encode(),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=15) as r:
+    # no-proxy opener: security suites proxy localhost and swallow the request
+    # 60s covers Ollama's cold model load; steady-state calls take ~1-2s
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req, timeout=60) as r:
         return json.load(r)["response"].strip()
 
 
@@ -148,6 +151,12 @@ def transcriber(out_q: queue.Queue):
                     continue
                 if np.abs(chunk).max() < 0.005:  # silence boundary: commit pending line
                     if pending and pending != last_out:
+                        if TARGET != "en":  # translate finals only; per-interim calls can't keep up
+                            try:
+                                pending = ollama_translate(pending)
+                            except Exception as e:
+                                log(f"ollama failed: {e!r}")
+                                pending = f"[ollama offline] {pending}"
                         last_out = pending
                         log(f"[commit] {pending}")
                         out_q.put(pending)
@@ -180,11 +189,8 @@ def transcriber(out_q: queue.Queue):
                 if not text or text == last_out or (len(text) > 12 and text in last_out):
                     continue
                 if TARGET != "en":
-                    try:
-                        text = ollama_translate(text)
-                    except Exception as e:
-                        log(f"ollama failed: {e!r}")
-                        text = f"[ollama offline] {text}"
+                    pending = text  # hold source text; translated once at commit
+                    continue
                 # show interim only when it extends what's on screen; rewrites wait
                 # for the silence commit — no more flickering text
                 if (not pending or pending in text) and text != last_out:
