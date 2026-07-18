@@ -25,8 +25,10 @@ CFG_PATH = pathlib.Path(__file__).with_name("config.toml")
 CFG = tomllib.loads(CFG_PATH.read_text(encoding="utf-8")) if CFG_PATH.exists() else {}
 
 SR = 16000
-WINDOW_S = 5.0   # longer context = far better fast-dialogue accuracy
+WINDOW_S = 5.0   # interim refreshes look at the last 5s
+UTTER_MAX_S = 15.0  # full utterance kept for the final commit — no lost sentence starts
 HOP_S = 1.0      # refresh every second
+SILENCE = 0.003  # quiet-speech-safe silence threshold
 MODEL = CFG.get("model", "medium")
 
 # Whisper hallucinates these on silence/music — never show them
@@ -149,47 +151,61 @@ def transcriber(out_q: queue.Queue):
                     buf = np.zeros(0, dtype=np.float32)
                     pending = ""
                     continue
-                if np.abs(chunk).max() < 0.005:  # silence boundary: commit pending line
-                    if pending and pending != last_out:
-                        if TARGET != "en":  # translate finals only; per-interim calls can't keep up
+
+                def transcribe(audio):
+                    if VOCAL_ISOLATION:
+                        try:
+                            audio = isolate_vocals(audio)
+                        except Exception as e:
+                            log(f"vocal isolation failed: {e!r}")
+                    elif VOICE_FOCUS:
+                        audio = bandpass(audio)
+                    segments, _ = model.transcribe(
+                        audio,
+                        task="translate" if TARGET == "en" else "transcribe",
+                        language=None if SOURCE == "auto" else SOURCE,
+                        initial_prompt=GLOSSARY or None,
+                        beam_size=2, vad_filter=True, condition_on_previous_text=False,
+                        vad_parameters={"min_silence_duration_ms": 250},
+                        no_speech_threshold=0.5, log_prob_threshold=-0.8,
+                    )
+                    text = " ".join(s.text.strip() for s in segments).strip()
+                    low = text.lower().strip(" .!")
+                    if any(h.strip(" .") in low for h in HALLUCINATIONS) and len(low) < 40:
+                        return ""
+                    for h in HALLUCINATIONS:  # also strip them off the end of real lines
+                        h = h.strip(" .")
+                        if low.endswith(h):
+                            text = text[:len(text) - len(low) + low.rfind(h)].rstrip(" .,;和")
+                            low = text.lower().strip(" .!")
+                    return text
+
+                if np.abs(chunk).max() < SILENCE:  # silence boundary: commit the utterance
+                    if len(buf) > SR * 0.5:
+                        # re-transcribe the WHOLE utterance so no words are lost,
+                        # even for sentences longer than the interim window
+                        final = transcribe(buf)
+                        if TARGET != "en" and final:
                             try:
-                                pending = ollama_translate(pending)
+                                final = ollama_translate(final)
                             except Exception as e:
                                 log(f"ollama failed: {e!r}")
-                                pending = f"[ollama offline] {pending}"
-                        last_out = pending
-                        log(f"[commit] {pending}")
-                        out_q.put(pending)
+                                final = f"[ollama offline] {final}"
+                        if final and final != last_out:
+                            last_out = final
+                            log(f"[commit] {final}")
+                            out_q.put(final)
                     pending = ""
                     buf = np.zeros(0, dtype=np.float32)
                     continue
-                buf = np.concatenate([buf, chunk])[-int(SR * WINDOW_S):]
-                audio = buf
-                if VOCAL_ISOLATION:
-                    try:
-                        audio = isolate_vocals(audio)
-                    except Exception as e:
-                        log(f"vocal isolation failed: {e!r}")
-                elif VOICE_FOCUS:
-                    audio = bandpass(audio)
-                segments, _ = model.transcribe(
-                    audio,
-                    task="translate" if TARGET == "en" else "transcribe",
-                    language=None if SOURCE == "auto" else SOURCE,
-                    initial_prompt=GLOSSARY or None,
-                    beam_size=2, vad_filter=True, condition_on_previous_text=False,
-                    vad_parameters={"min_silence_duration_ms": 250},
-                    no_speech_threshold=0.5, log_prob_threshold=-0.8,
-                )
-                text = " ".join(s.text.strip() for s in segments).strip()
-                low = text.lower().strip(" .!")
-                if any(h.strip(" .") in low for h in HALLUCINATIONS) and len(low) < 40:
+                buf = np.concatenate([buf, chunk])[-int(SR * UTTER_MAX_S):]
+                if audio_q.qsize() > 8:  # backlogged: skip interims, catch up; commit still covers everything
                     continue
-                # ponytail: substring check kills overlap-window repeats; fuzzy match if it misses
+                text = transcribe(buf[-int(SR * WINDOW_S):])  # interim: recent window only
                 if not text or text == last_out or (len(text) > 12 and text in last_out):
                     continue
                 if TARGET != "en":
-                    pending = text  # hold source text; translated once at commit
+                    pending = text  # non-EN targets show finals only (translation cadence)
                     continue
                 # show interim only when it extends what's on screen; rewrites wait
                 # for the silence commit — no more flickering text

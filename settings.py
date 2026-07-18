@@ -8,7 +8,9 @@ from tkinter import ttk
 HERE = pathlib.Path(__file__).parent
 CFG = HERE / "config.toml"
 
-LANGS = ["auto", "ja", "fr", "en", "ko", "zh", "de", "es", "it", "pt", "ru", "hi", "ar", "nl", "pl", "tr", "vi", "th"]
+LANGS = ["auto", "ja", "fr", "en", "ko", "zh", "de", "es", "it", "pt", "ru",
+         "hi", "gu", "ta", "te", "bn", "mr", "pa", "ur",  # Indian languages
+         "ar", "nl", "pl", "tr", "vi", "th"]
 FIELDS = [
     # key, label, widget, options
     ("source", "Spoken language", "combo", LANGS),

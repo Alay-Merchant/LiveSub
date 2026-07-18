@@ -10,7 +10,7 @@ your machine, and overlays translucent, click-through subtitles in English (or a
 language, via Ollama). No cloud, no accounts, no uploads — your audio never leaves
 your PC.
 
-- 🌍 **~99 languages in, auto-detected** — Japanese, French, Korean, Chinese, German, Spanish, Hindi, Russian…
+- 🌍 **~99 languages in, auto-detected** — Japanese, French, Korean, Chinese, German, Spanish, Russian, and Indian languages including Hindi, Gujarati, Tamil, Telugu, Bengali, Marathi, Punjabi, Urdu…
 - 🖥️ **Works with everything** — video players, browsers, streams, games, calls
 - 👻 **Non-distracting** — translucent overlay, click-through (your mouse ignores it), fades when nobody's talking
 - 🎵 **Voice focus** — filters out music and effects so dialogue wins
